@@ -1,0 +1,1621 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>AI Visiting Card Scanner</title>
+<!-- Tesseract.js OCR Library -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+  /* ===== CSS RESET & VARIABLES ===== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --primary: #4f46e5;
+    --primary-dark: #3730a3;
+    --primary-light: #818cf8;
+    --accent: #06b6d4;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --bg: #0f172a;
+    --bg2: #1e293b;
+    --bg3: #334155;
+    --card: #1e293b;
+    --border: #334155;
+    --text: #f1f5f9;
+    --text2: #94a3b8;
+    --text3: #64748b;
+    --radius: 16px;
+    --radius-sm: 10px;
+    --shadow: 0 8px 32px rgba(0,0,0,0.4);
+    --glow: 0 0 20px rgba(79,70,229,0.3);
+  }
+  html { font-size: 16px; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ===== HEADER ===== */
+  header {
+    background: linear-gradient(135deg, var(--primary-dark), var(--primary), var(--accent));
+    padding: 20px 24px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  header::before {
+    content: '';
+    position: absolute;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    background: radial-gradient(circle at 70% 30%, rgba(255,255,255,0.08) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  .header-icon { font-size: 2.2rem; margin-bottom: 6px; }
+  header h1 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.5px; }
+  header p { font-size: 0.85rem; opacity: 0.85; margin-top: 4px; }
+
+  /* ===== MAIN LAYOUT ===== */
+  main { max-width: 720px; margin: 0 auto; padding: 20px 16px 40px; }
+
+  /* ===== SECTION CARD ===== */
+  .section-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+  }
+  .section-title {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 1rem; font-weight: 700; color: var(--primary-light);
+    margin-bottom: 16px; padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-title .icon { font-size: 1.2rem; }
+
+  /* ===== TAB NAV ===== */
+  .tabs {
+    display: flex; gap: 4px;
+    background: var(--bg2); border-radius: var(--radius-sm);
+    padding: 4px; margin-bottom: 20px;
+  }
+  .tab-btn {
+    flex: 1; padding: 10px 8px; border: none; border-radius: 8px;
+    background: transparent; color: var(--text2);
+    font-size: 0.82rem; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; display: flex; align-items: center;
+    justify-content: center; gap: 6px;
+  }
+  .tab-btn.active {
+    background: var(--primary); color: #fff;
+    box-shadow: 0 2px 8px rgba(79,70,229,0.4);
+  }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ===== CAMERA AREA ===== */
+  .camera-wrapper {
+    position: relative; border-radius: var(--radius-sm);
+    overflow: hidden; background: #000;
+    aspect-ratio: 4/3; max-height: 360px;
+    border: 2px solid var(--border);
+  }
+  #videoFeed {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .camera-overlay {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .card-guide {
+    width: 88%; height: 78%;
+    border: 2px dashed rgba(255,255,255,0.5);
+    border-radius: 10px;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.35);
+    position: relative;
+  }
+  .card-guide::before, .card-guide::after,
+  .card-guide .corner-br, .card-guide .corner-bl {
+    content: ''; position: absolute;
+    width: 22px; height: 22px;
+    border-color: var(--accent); border-style: solid;
+  }
+  .card-guide::before { top: -2px; left: -2px; border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+  .card-guide::after  { top: -2px; right: -2px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+  .card-guide .corner-br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+  .card-guide .corner-bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+
+  .camera-status {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,0.7));
+    padding: 20px 12px 10px;
+    font-size: 0.78rem; color: rgba(255,255,255,0.8);
+    text-align: center;
+  }
+  .camera-placeholder {
+    width: 100%; height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px;
+    color: var(--text3); background: var(--bg2);
+  }
+  .camera-placeholder .ph-icon { font-size: 3rem; }
+  .camera-placeholder p { font-size: 0.88rem; }
+
+  /* ===== CAMERA CONTROLS ===== */
+  .camera-controls {
+    display: flex; gap: 10px; margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 8px; padding: 12px 18px; border: none; border-radius: var(--radius-sm);
+    font-size: 0.9rem; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; text-decoration: none; white-space: nowrap;
+  }
+  .btn-primary { background: var(--primary); color: #fff; flex: 1; }
+  .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
+  .btn-success { background: var(--success); color: #fff; flex: 1; }
+  .btn-success:hover { background: #059669; transform: translateY(-1px); }
+  .btn-warning { background: var(--warning); color: #000; flex: 1; }
+  .btn-warning:hover { background: #d97706; transform: translateY(-1px); }
+  .btn-danger  { background: var(--danger); color: #fff; }
+  .btn-danger:hover { background: #dc2626; transform: translateY(-1px); }
+  .btn-ghost {
+    background: var(--bg3); color: var(--text2);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { background: var(--border); color: var(--text); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; }
+  .btn-sm { padding: 8px 12px; font-size: 0.8rem; }
+  .btn-icon { width: 40px; height: 40px; padding: 0; border-radius: 8px; }
+
+  /* ===== FILE UPLOAD AREA ===== */
+  .upload-area {
+    border: 2px dashed var(--border); border-radius: var(--radius-sm);
+    padding: 30px 20px; text-align: center; cursor: pointer;
+    transition: all 0.2s; background: var(--bg2);
+  }
+  .upload-area:hover, .upload-area.drag-over {
+    border-color: var(--primary); background: rgba(79,70,229,0.08);
+  }
+  .upload-area .up-icon { font-size: 2.5rem; margin-bottom: 10px; }
+  .upload-area p { color: var(--text2); font-size: 0.9rem; }
+  .upload-area span { color: var(--primary-light); font-weight: 600; }
+  #fileInput { display: none; }
+
+  /* ===== PREVIEW CANVAS ===== */
+  #previewCanvas { display: none; }
+  .preview-wrapper {
+    position: relative; border-radius: var(--radius-sm); overflow: hidden;
+    background: #000; margin-top: 14px; display: none;
+  }
+  #previewImg {
+    width: 100%; display: block; max-height: 280px; object-fit: contain;
+  }
+  .preview-badge {
+    position: absolute; top: 8px; right: 8px;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    border-radius: 6px; padding: 4px 10px;
+    font-size: 0.75rem; color: var(--accent); font-weight: 600;
+  }
+
+  /* ===== OCR PROGRESS ===== */
+  .ocr-progress { display: none; }
+  .progress-bar-wrapper {
+    background: var(--bg3); border-radius: 100px;
+    height: 8px; overflow: hidden; margin: 8px 0;
+  }
+  .progress-bar {
+    height: 100%; background: linear-gradient(90deg, var(--primary), var(--accent));
+    border-radius: 100px; transition: width 0.3s;
+    width: 0%;
+  }
+  .progress-label {
+    font-size: 0.8rem; color: var(--text2);
+    display: flex; justify-content: space-between;
+  }
+  .spinner {
+    display: inline-block; width: 16px; height: 16px;
+    border: 2px solid var(--border); border-top-color: var(--primary);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ===== RAW OCR TEXT ===== */
+  .raw-text-box {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px;
+    font-family: 'Courier New', monospace; font-size: 0.78rem;
+    color: var(--text2); max-height: 160px; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-word; line-height: 1.6;
+    display: none;
+  }
+
+  /* ===== FORM FIELDS ===== */
+  .form-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 480px) { .form-grid { grid-template-columns: 1fr; } }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group.full { grid-column: 1 / -1; }
+  .form-label {
+    font-size: 0.78rem; font-weight: 600; color: var(--text2);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .form-label .lbl-icon { font-size: 0.9rem; }
+  .confidence-badge {
+    margin-left: auto; font-size: 0.68rem; padding: 1px 7px;
+    border-radius: 100px; font-weight: 700;
+  }
+  .conf-high { background: rgba(16,185,129,0.15); color: var(--success); }
+  .conf-med  { background: rgba(245,158,11,0.15); color: var(--warning); }
+  .conf-low  { background: rgba(239,68,68,0.15);  color: var(--danger); }
+  .form-input, .form-textarea {
+    background: var(--bg); border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm); padding: 11px 13px;
+    color: var(--text); font-size: 0.9rem; outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    font-family: inherit; width: 100%;
+  }
+  .form-input:focus, .form-textarea:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79,70,229,0.15);
+  }
+  .form-input.filled { border-color: rgba(16,185,129,0.4); }
+  .form-textarea { resize: vertical; min-height: 90px; }
+
+  /* ===== ACTION BUTTONS ===== */
+  .action-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+
+  /* ===== HISTORY SECTION ===== */
+  .history-toolbar {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .search-input {
+    flex: 1; min-width: 160px;
+    background: var(--bg); border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm); padding: 9px 12px;
+    color: var(--text); font-size: 0.85rem; outline: none;
+    transition: border-color 0.2s;
+  }
+  .search-input:focus { border-color: var(--primary); }
+  .history-count {
+    font-size: 0.8rem; color: var(--text3);
+    background: var(--bg3); padding: 4px 10px; border-radius: 100px;
+  }
+  .history-list { display: flex; flex-direction: column; gap: 12px; }
+  .history-item {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px; cursor: pointer;
+    transition: all 0.2s; position: relative;
+  }
+  .history-item:hover { border-color: var(--primary-light); transform: translateY(-1px); }
+  .hi-header { display: flex; align-items: flex-start; gap: 10px; }
+  .hi-avatar {
+    width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.3rem; font-weight: 800; color: #fff;
+  }
+  .hi-info { flex: 1; min-width: 0; }
+  .hi-name { font-weight: 700; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hi-company { font-size: 0.8rem; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hi-meta { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+  .hi-chip {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 0.75rem; color: var(--text3);
+    background: var(--bg3); padding: 3px 9px; border-radius: 100px;
+    white-space: nowrap; overflow: hidden; max-width: 200px; text-overflow: ellipsis;
+  }
+  .hi-date { font-size: 0.7rem; color: var(--text3); margin-top: 6px; }
+  .hi-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .empty-state {
+    text-align: center; padding: 40px 20px; color: var(--text3);
+  }
+  .empty-state .es-icon { font-size: 3rem; margin-bottom: 12px; }
+  .empty-state p { font-size: 0.9rem; }
+
+  /* ===== TOAST NOTIFICATION ===== */
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(100px);
+    background: var(--bg2); border: 1px solid var(--border);
+    color: var(--text); padding: 12px 20px; border-radius: var(--radius-sm);
+    font-size: 0.88rem; font-weight: 500; z-index: 9999;
+    transition: transform 0.3s cubic-bezier(.34,1.56,.64,1);
+    display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5); max-width: 90vw;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+  #toast.toast-success { border-color: var(--success); }
+  #toast.toast-error   { border-color: var(--danger);  }
+  #toast.toast-info    { border-color: var(--primary);  }
+
+  /* ===== MODAL ===== */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px); z-index: 1000;
+    display: none; align-items: center; justify-content: center; padding: 16px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px; width: 100%; max-width: 500px;
+    box-shadow: var(--shadow); max-height: 90vh; overflow-y: auto;
+  }
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .modal-title { font-size: 1.1rem; font-weight: 700; }
+  .modal-close {
+    background: var(--bg3); border: none; color: var(--text2);
+    width: 32px; height: 32px; border-radius: 8px; cursor: pointer;
+    font-size: 1rem; display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s;
+  }
+  .modal-close:hover { background: var(--danger); color: #fff; }
+  .modal-field { margin-bottom: 12px; }
+  .modal-field label { font-size: 0.78rem; color: var(--text2); font-weight: 600; margin-bottom: 4px; display: block; }
+  .modal-field .val {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 9px 12px; font-size: 0.88rem;
+    color: var(--text); word-break: break-all;
+    min-height: 36px;
+  }
+  .modal-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+
+  /* ===== ENHANCEMENT TIPS ===== */
+  .tips-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 400px) { .tips-grid { grid-template-columns: 1fr; } }
+  .tip-card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 12px;
+    display: flex; gap: 10px; align-items: flex-start;
+  }
+  .tip-icon { font-size: 1.3rem; flex-shrink: 0; }
+  .tip-text { font-size: 0.78rem; color: var(--text2); line-height: 1.5; }
+  .tip-text strong { color: var(--text); display: block; margin-bottom: 2px; }
+
+  /* ===== SCROLLBAR ===== */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
+
+  /* ===== ANIMATIONS ===== */
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.3s ease forwards; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+  .pulse { animation: pulse 1.5s ease infinite; }
+
+  /* ===== CHIP ROW ===== */
+  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .chip {
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 100px; font-size: 0.75rem; font-weight: 600;
+    border: 1px solid;
+  }
+  .chip-blue  { background: rgba(79,70,229,0.1); color: var(--primary-light); border-color: rgba(79,70,229,0.3); }
+  .chip-green { background: rgba(16,185,129,0.1); color: var(--success); border-color: rgba(16,185,129,0.3); }
+  .chip-cyan  { background: rgba(6,182,212,0.1); color: var(--accent); border-color: rgba(6,182,212,0.3); }
+
+  /* ===== ENHANCEMENT TOGGLE ===== */
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .toggle-label { font-size: 0.85rem; color: var(--text2); }
+  .toggle {
+    position: relative; display: inline-block; width: 44px; height: 24px;
+  }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute; cursor: pointer; inset: 0;
+    background: var(--bg3); border-radius: 100px; transition: 0.2s;
+  }
+  .toggle-slider::before {
+    content: ''; position: absolute; height: 18px; width: 18px;
+    left: 3px; bottom: 3px; background: #fff;
+    border-radius: 50%; transition: 0.2s;
+  }
+  .toggle input:checked + .toggle-slider { background: var(--primary); }
+  .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
+</style>
+</head>
+<body>
+
+<!-- ===== HEADER ===== -->
+<header>
+  <div class="header-icon">🪪</div>
+  <h1>AI Card Scanner</h1>
+  <p>Powered by Tesseract.js OCR · Instant Contact Extraction</p>
+</header>
+
+<!-- ===== MAIN ===== -->
+<main>
+
+  <!-- Tab Navigation -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('scanner')" id="tab-scanner">
+      📷 Scanner
+    </button>
+    <button class="tab-btn" onclick="switchTab('result')" id="tab-result">
+      📋 Details
+    </button>
+    <button class="tab-btn" onclick="switchTab('history')" id="tab-history">
+      🗂️ History
+    </button>
+  </div>
+
+  <!-- ===== TAB: SCANNER ===== -->
+  <div id="pane-scanner" class="tab-content active">
+
+    <!-- Enhancement Options -->
+    <div class="section-card">
+      <div class="section-title"><span class="icon">⚙️</span> Image Enhancement</div>
+      <div class="toggle-row">
+        <span class="toggle-label">Auto Contrast &amp; Brightness</span>
+        <label class="toggle"><input type="checkbox" id="opt-contrast" checked><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Sharpen &amp; Denoise</span>
+        <label class="toggle"><input type="checkbox" id="opt-sharpen" checked><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Auto Rotation Correction</span>
+        <label class="toggle"><input type="checkbox" id="opt-rotate" checked><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row" style="margin-bottom:0">
+        <span class="toggle-label">Grayscale Mode (faster OCR)</span>
+        <label class="toggle"><input type="checkbox" id="opt-gray" checked><span class="toggle-slider"></span></label>
+      </div>
+    </div>
+
+    <!-- Camera Section -->
+    <div class="section-card">
+      <div class="section-title"><span class="icon">📷</span> Live Camera</div>
+
+      <div class="camera-wrapper" id="cameraWrapper">
+        <div class="camera-placeholder" id="cameraPlaceholder">
+          <div class="ph-icon">📷</div>
+          <p>Tap "Start Camera" to begin</p>
+        </div>
+        <video id="videoFeed" autoplay playsinline muted style="display:none"></video>
+        <div class="camera-overlay" id="camOverlay" style="display:none">
+          <div class="card-guide">
+            <span class="corner-br"></span>
+            <span class="corner-bl"></span>
+          </div>
+        </div>
+        <div class="camera-status" id="camStatus" style="display:none">
+          📐 Align the visiting card within the frame
+        </div>
+      </div>
+
+      <div class="camera-controls">
+        <button class="btn btn-primary" id="btnStartCam" onclick="startCamera()">
+          📷 Start Camera
+        </button>
+        <button class="btn btn-success" id="btnCapture" onclick="captureFrame()" disabled>
+          🔴 Capture
+        </button>
+        <button class="btn btn-ghost btn-icon" id="btnFlip" onclick="flipCamera()" disabled title="Flip Camera">
+          🔄
+        </button>
+        <button class="btn btn-ghost btn-icon" id="btnStopCam" onclick="stopCamera()" disabled title="Stop Camera">
+          ⏹
+        </button>
+      </div>
+    </div>
+
+    <!-- Upload Section -->
+    <div class="section-card">
+      <div class="section-title"><span class="icon">📁</span> Upload Card Image</div>
+
+      <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()"
+           ondragover="handleDragOver(event)" ondrop="handleDrop(event)" ondragleave="handleDragLeave(event)">
+        <div class="up-icon">🗂️</div>
+        <p><span>Click to upload</span> or drag &amp; drop</p>
+        <p style="font-size:0.75rem; margin-top:6px; color:var(--text3)">JPG, PNG, WEBP — Max 15 MB</p>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" onchange="handleFileUpload(event)">
+
+      <!-- Captured/Uploaded Preview -->
+      <div class="preview-wrapper" id="previewWrapper">
+        <img id="previewImg" src="" alt="Card preview">
+        <div class="preview-badge" id="previewBadge">PREVIEW</div>
+      </div>
+    </div>
+
+    <!-- OCR Progress -->
+    <div class="section-card ocr-progress" id="ocrProgressSection">
+      <div class="section-title">
+        <span class="spinner"></span>
+        <span>Extracting Text</span>
+      </div>
+      <div class="progress-bar-wrapper">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+      <div class="progress-label">
+        <span id="progressStatus">Initializing OCR engine…</span>
+        <span id="progressPct">0%</span>
+      </div>
+    </div>
+
+    <!-- Process Button -->
+    <button class="btn btn-warning" id="btnProcess" onclick="runOCR()" style="width:100%; display:none; margin-bottom:20px; padding:14px;">
+      🔍 Extract Card Details
+    </button>
+
+    <!-- Tips -->
+    <div class="section-card">
+      <div class="section-title"><span class="icon">💡</span> Scanning Tips</div>
+      <div class="tips-grid">
+        <div class="tip-card">
+          <div class="tip-icon">💡</div>
+          <div class="tip-text"><strong>Good Lighting</strong> Scan in bright, even light for best accuracy</div>
+        </div>
+        <div class="tip-card">
+          <div class="tip-icon">📐</div>
+          <div class="tip-text"><strong>Flat &amp; Straight</strong> Keep card flat and within the guide frame</div>
+        </div>
+        <div class="tip-card">
+          <div class="tip-icon">🔍</div>
+          <div class="tip-text"><strong>Fill the Frame</strong> Move closer so text occupies most of the view</div>
+        </div>
+        <div class="tip-card">
+          <div class="tip-icon">🚫</div>
+          <div class="tip-text"><strong>Avoid Glare</strong> Tilt card slightly if reflections appear</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TAB: RESULT / DETAILS ===== -->
+  <div id="pane-result" class="tab-content">
+
+    <!-- Raw OCR -->
+    <div class="section-card">
+      <div class="section-title"><span class="icon">🔤</span> Raw OCR Text
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="toggleRaw()" id="btnToggleRaw">Show</button>
+      </div>
+      <div class="raw-text-box" id="rawText">—</div>
+
+      <div class="chip-row" id="ocrStats" style="margin-top:10px; display:none">
+        <span class="chip chip-blue" id="statWords">—</span>
+        <span class="chip chip-green" id="statConf">—</span>
+        <span class="chip chip-cyan" id="statLines">—</span>
+      </div>
+    </div>
+
+    <!-- Extracted Fields Form -->
+    <div class="section-card">
+      <div class="section-title"><span class="icon">📋</span> Extracted Details</div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">
+            <span class="lbl-icon">👤</span> Full Name
+            <span class="confidence-badge" id="conf-name"></span>
+          </label>
+          <input type="text" class="form-input" id="f-name" placeholder="e.g. Gokulakrishnan K">
+        </div>
+        <div class="form-group">
+          <label class="form-label">
+            <span class="lbl-icon">💼</span> Job Title / Role
+            <span class="confidence-badge" id="conf-role"></span>
+          </label>
+          <input type="text" class="form-input" id="f-role" placeholder="e.g. Executive – Accounts">
+        </div>
+        <div class="form-group full">
+          <label class="form-label">
+            <span class="lbl-icon">🏢</span> Company Name
+            <span class="confidence-badge" id="conf-company"></span>
+          </label>
+          <input type="text" class="form-input" id="f-company" placeholder="e.g. NovaCast India Pvt. Ltd.">
+        </div>
+        <div class="form-group">
+          <label class="form-label">
+            <span class="lbl-icon">📞</span> Phone Number(s)
+            <span class="confidence-badge" id="conf-phone"></span>
+          </label>
+          <input type="text" class="form-input" id="f-phone" placeholder="e.g. +91 86106 69831">
+        </div>
+        <div class="form-group">
+          <label class="form-label">
+            <span class="lbl-icon">✉️</span> Email Address
+            <span class="confidence-badge" id="conf-email"></span>
+          </label>
+          <input type="email" class="form-input" id="f-email" placeholder="e.g. name@company.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">
+            <span class="lbl-icon">🌐</span> Website / URL
+            <span class="confidence-badge" id="conf-web"></span>
+          </label>
+          <input type="text" class="form-input" id="f-web" placeholder="e.g. www.company.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">
+            <span class="lbl-icon">📮</span> Pincode / ZIP
+            <span class="confidence-badge" id="conf-pin"></span>
+          </label>
+          <input type="text" class="form-input" id="f-pin" placeholder="e.g. 641018">
+        </div>
+        <div class="form-group full">
+          <label class="form-label">
+            <span class="lbl-icon">📍</span> Address
+            <span class="confidence-badge" id="conf-addr"></span>
+          </label>
+          <textarea class="form-textarea" id="f-addr" placeholder="e.g. 47-1, Dr Balasundaram Road, Coimbatore, Tamilnadu, India"></textarea>
+        </div>
+      </div>
+
+      <div class="action-row" style="margin-top:16px">
+        <button class="btn btn-success" style="flex:1" onclick="saveContact()">
+          💾 Save Contact
+        </button>
+        <button class="btn btn-primary" style="flex:1" onclick="shareContact()">
+          📤 Share / Export
+        </button>
+        <button class="btn btn-ghost" onclick="clearFields()">
+          🗑️ Clear
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TAB: HISTORY ===== -->
+  <div id="pane-history" class="tab-content">
+    <div class="section-card">
+      <div class="section-title"><span class="icon">🗂️</span> Scanned Cards History</div>
+
+      <div class="history-toolbar">
+        <input type="text" class="search-input" id="searchInput"
+               placeholder="🔍 Search by name, company, email…"
+               oninput="filterHistory()">
+        <span class="history-count" id="historyCount">0 cards</span>
+        <button class="btn btn-ghost btn-sm" onclick="exportAllCSV()">⬇️ CSV</button>
+        <button class="btn btn-danger btn-sm" onclick="clearAllHistory()">🗑️ Clear All</button>
+      </div>
+
+      <div class="history-list" id="historyList">
+        <div class="empty-state">
+          <div class="es-icon">🃏</div>
+          <p>No scanned cards yet.<br>Scan your first card to see it here!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ===== DETAIL MODAL ===== -->
+<div class="modal-overlay" id="detailModal">
+  <div class="modal fade-in">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Card Details</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div id="modalBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="flex:1" onclick="loadToForm()">✏️ Edit</button>
+      <button class="btn btn-success" style="flex:1" onclick="exportVCard()">📇 vCard</button>
+      <button class="btn btn-danger" onclick="deleteCard()">🗑️</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TOAST ===== -->
+<div id="toast"></div>
+
+<!-- ===== CANVAS (hidden, for processing) ===== -->
+<canvas id="previewCanvas" style="display:none"></canvas>
+
+<script>
+/* =======================================================
+   GLOBAL STATE
+   ======================================================= */
+let stream = null;           // MediaStream from camera
+let facingMode = 'environment'; // camera direction
+let capturedDataURL = null;  // current image DataURL
+let currentCardIndex = null; // for modal delete/edit
+let cards = [];              // history array
+
+/* =======================================================
+   INIT
+   ======================================================= */
+document.addEventListener('DOMContentLoaded', () => {
+  loadHistory();
+});
+
+/* =======================================================
+   TAB SWITCHING
+   ======================================================= */
+function switchTab(name) {
+  ['scanner','result','history'].forEach(t => {
+    document.getElementById('pane-' + t).classList.toggle('active', t === name);
+    document.getElementById('tab-' + t).classList.toggle('active', t === name);
+  });
+  if (name === 'history') renderHistory();
+}
+
+/* =======================================================
+   CAMERA FUNCTIONS
+   ======================================================= */
+async function startCamera() {
+  try {
+    // Stop existing stream
+    if (stream) stopCamera();
+
+    const constraints = {
+      video: {
+        facingMode: { ideal: facingMode },
+        width:  { ideal: 1920 },
+        height: { ideal: 1080 }
+      },
+      audio: false
+    };
+
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+    const video = document.getElementById('videoFeed');
+    video.srcObject = stream;
+    video.style.display = 'block';
+
+    document.getElementById('cameraPlaceholder').style.display = 'none';
+    document.getElementById('camOverlay').style.display = 'flex';
+    document.getElementById('camStatus').style.display = 'block';
+
+    document.getElementById('btnCapture').disabled = false;
+    document.getElementById('btnFlip').disabled    = false;
+    document.getElementById('btnStopCam').disabled = false;
+    document.getElementById('btnStartCam').disabled = true;
+
+    showToast('📷 Camera active — align your card', 'info');
+  } catch (err) {
+    console.error('Camera error:', err);
+    showToast('❌ Camera access denied. Please use file upload.', 'error');
+  }
+}
+
+function stopCamera() {
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+  const video = document.getElementById('videoFeed');
+  video.srcObject = null;
+  video.style.display = 'none';
+
+  document.getElementById('cameraPlaceholder').style.display = 'flex';
+  document.getElementById('camOverlay').style.display = 'none';
+  document.getElementById('camStatus').style.display = 'none';
+
+  document.getElementById('btnCapture').disabled  = true;
+  document.getElementById('btnFlip').disabled     = true;
+  document.getElementById('btnStopCam').disabled  = true;
+  document.getElementById('btnStartCam').disabled = false;
+}
+
+function flipCamera() {
+  facingMode = (facingMode === 'environment') ? 'user' : 'environment';
+  startCamera();
+}
+
+function captureFrame() {
+  const video = document.getElementById('videoFeed');
+  if (!video.srcObject) return;
+
+  const canvas = document.getElementById('previewCanvas');
+  canvas.width  = video.videoWidth  || 1280;
+  canvas.height = video.videoHeight || 720;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  capturedDataURL = canvas.toDataURL('image/jpeg', 0.95);
+  showPreview(capturedDataURL, '📷 CAPTURED');
+  document.getElementById('btnProcess').style.display = 'block';
+  showToast('✅ Frame captured!', 'success');
+}
+
+/* =======================================================
+   FILE UPLOAD
+   ======================================================= */
+function handleFileUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  loadImageFile(file);
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  document.getElementById('uploadArea').classList.add('drag-over');
+}
+
+function handleDragLeave() {
+  document.getElementById('uploadArea').classList.remove('drag-over');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('uploadArea').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) loadImageFile(file);
+}
+
+function loadImageFile(file) {
+  if (file.size > 15 * 1024 * 1024) {
+    showToast('❌ File too large (max 15 MB)', 'error');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    capturedDataURL = ev.target.result;
+    showPreview(capturedDataURL, '📁 UPLOADED');
+    document.getElementById('btnProcess').style.display = 'block';
+    showToast('📁 Image loaded — ready to scan', 'success');
+  };
+  reader.readAsDataURL(file);
+}
+
+function showPreview(dataURL, badge) {
+  const wrapper = document.getElementById('previewWrapper');
+  document.getElementById('previewImg').src = dataURL;
+  document.getElementById('previewBadge').textContent = badge;
+  wrapper.style.display = 'block';
+}
+
+/* =======================================================
+   IMAGE ENHANCEMENT
+   ======================================================= */
+/**
+ * Apply enhancements to the captured image on a canvas.
+ * Returns an enhanced DataURL.
+ */
+async function enhanceImage(dataURL) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+
+      // Work at 2x resolution for better OCR
+      const scale = Math.min(3, 2400 / Math.max(img.width, img.height));
+      canvas.width  = img.width  * scale;
+      canvas.height = img.height * scale;
+
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+
+      // --- Optional rotation for sideways card ---
+      // If landscape image is taller than wide → rotate 90°
+      if (document.getElementById('opt-rotate').checked && img.height > img.width * 1.2) {
+        canvas.width  = img.height * scale;
+        canvas.height = img.width  * scale;
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.drawImage(img, -img.width * scale / 2, -img.height * scale / 2, img.width * scale, img.height * scale);
+      } else {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      }
+
+      // --- Pixel-level processing ---
+      const applyContrast = document.getElementById('opt-contrast').checked;
+      const applySharpen  = document.getElementById('opt-sharpen').checked;
+      const applyGray     = document.getElementById('opt-gray').checked;
+
+      if (applyContrast || applyGray) {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+
+        // Auto-level: find min/max luminance
+        let minL = 255, maxL = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const l = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+          if (l < minL) minL = l;
+          if (l > maxL) maxL = l;
+        }
+        const range = maxL - minL || 1;
+
+        for (let i = 0; i < data.length; i += 4) {
+          let r = data[i], g = data[i+1], b = data[i+2];
+
+          if (applyContrast) {
+            // Stretch contrast
+            r = ((r - minL) / range) * 255;
+            g = ((g - minL) / range) * 255;
+            b = ((b - minL) / range) * 255;
+            // Boost contrast further
+            r = clamp(((r - 128) * 1.4) + 128);
+            g = clamp(((g - 128) * 1.4) + 128);
+            b = clamp(((b - 128) * 1.4) + 128);
+          }
+
+          if (applyGray) {
+            // Grayscale
+            const gray = clamp(0.299 * r + 0.587 * g + 0.114 * b);
+            data[i] = data[i+1] = data[i+2] = gray;
+          } else {
+            data[i] = clamp(r); data[i+1] = clamp(g); data[i+2] = clamp(b);
+          }
+        }
+        ctx.putImageData(imageData, 0, 0);
+      }
+
+      // Sharpen using convolution
+      if (applySharpen) {
+        const src = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const dst = ctx.createImageData(canvas.width, canvas.height);
+        const d = src.data;
+        const o = dst.data;
+        const w = canvas.width;
+        // Sharpen kernel: 0,-1,0 / -1,5,-1 / 0,-1,0
+        for (let y = 1; y < canvas.height - 1; y++) {
+          for (let x = 1; x < w - 1; x++) {
+            for (let c = 0; c < 3; c++) {
+              const idx = (y * w + x) * 4 + c;
+              const val = 5 * d[idx]
+                - d[((y-1)*w+x)*4+c]
+                - d[((y+1)*w+x)*4+c]
+                - d[(y*w+(x-1))*4+c]
+                - d[(y*w+(x+1))*4+c];
+              o[idx] = clamp(val);
+            }
+            o[(y*w+x)*4+3] = 255; // alpha
+          }
+        }
+        ctx.putImageData(dst, 0, 0);
+      }
+
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.src = dataURL;
+  });
+}
+
+function clamp(v) { return Math.max(0, Math.min(255, Math.round(v))); }
+
+/* =======================================================
+   OCR ENGINE
+   ======================================================= */
+async function runOCR() {
+  if (!capturedDataURL) {
+    showToast('⚠️ No image captured yet', 'error');
+    return;
+  }
+
+  // Show progress section
+  const progSection = document.getElementById('ocrProgressSection');
+  progSection.style.display = 'block';
+  setProgress(0, 'Enhancing image…');
+
+  try {
+    // Enhance image first
+    const enhanced = await enhanceImage(capturedDataURL);
+    setProgress(15, 'Initializing OCR engine…');
+
+    // Run Tesseract
+    const result = await Tesseract.recognize(
+      enhanced,
+      'eng',
+      {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            const pct = Math.round(15 + m.progress * 80);
+            setProgress(pct, 'Recognizing text…');
+          } else if (m.status === 'loading tesseract core') {
+            setProgress(5, 'Loading OCR engine…');
+          } else if (m.status === 'initializing tesseract') {
+            setProgress(10, 'Initializing Tesseract…');
+          }
+        }
+      }
+    );
+
+    setProgress(98, 'Parsing extracted text…');
+
+    const rawText = result.data.text;
+    const confidence = Math.round(result.data.confidence);
+    const words = result.data.words || [];
+
+    // Show raw text
+    document.getElementById('rawText').textContent = rawText || '(No text detected)';
+    document.getElementById('rawText').style.display = 'block';
+
+    // OCR stats chips
+    document.getElementById('statWords').textContent = `📝 ${words.length} words`;
+    document.getElementById('statConf').textContent  = `✅ ${confidence}% confidence`;
+    document.getElementById('statLines').textContent = `📄 ${rawText.split('\n').filter(l => l.trim()).length} lines`;
+    document.getElementById('ocrStats').style.display = 'flex';
+
+    // Parse & fill fields
+    const parsed = parseCardText(rawText);
+    fillFields(parsed, confidence);
+
+    setProgress(100, 'Done!');
+    setTimeout(() => { progSection.style.display = 'none'; }, 1200);
+
+    // Switch to result tab
+    switchTab('result');
+    showToast(`✅ Extraction complete! Confidence: ${confidence}%`, 'success');
+
+  } catch (err) {
+    console.error('OCR error:', err);
+    setProgress(0, 'Error occurred');
+    progSection.style.display = 'none';
+    showToast('❌ OCR failed: ' + (err.message || 'Unknown error'), 'error');
+  }
+}
+
+function setProgress(pct, label) {
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('progressStatus').textContent = label;
+  document.getElementById('progressPct').textContent = pct + '%';
+}
+
+/* =======================================================
+   INTELLIGENT TEXT PARSING
+   ======================================================= */
+/**
+ * Main parser — extracts structured fields from raw OCR text.
+ * Handles:
+ *  - International phone numbers (+91, +1, country codes)
+ *  - Landlines with brackets/dashes
+ *  - Email (any text with @)
+ *  - 6-digit pincodes
+ *  - Website URLs
+ *  - Name (first meaningful line)
+ *  - Role (second meaningful line)
+ *  - Company (Pvt Ltd / Inc / Corp patterns)
+ *  - Address (remaining location lines)
+ */
+function parseCardText(rawText) {
+  const fields = {
+    name: '', role: '', company: '',
+    phone: '', email: '', website: '',
+    pincode: '', address: ''
+  };
+
+  if (!rawText || !rawText.trim()) return fields;
+
+  // ---- 1. Split into clean lines ----
+  const allLines = rawText.split('\n').map(l => l.trim());
+
+  // ---- 2. EMAIL — any line containing @ ----
+  const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+  const emailMatches = rawText.match(emailRegex) || [];
+  if (emailMatches.length > 0) {
+    fields.email = emailMatches[0].toLowerCase();
+  }
+
+  // ---- 3. WEBSITE / URL ----
+  // Match www.domain.com / http(s):// URLs (but NOT email addresses)
+  const urlRegex = /(?:https?:\/\/)?(?:www\.)[a-zA-Z0-9\-]+(?:\.[a-zA-Z]{2,})+(?:\/[^\s]*)*/gi;
+  const allText = rawText.replace(emailRegex, ''); // strip emails first
+  const urlMatches = allText.match(urlRegex) || [];
+  if (urlMatches.length > 0) {
+    fields.website = urlMatches[0];
+  } else {
+    // Fallback: bare domain like novacastindia.com
+    const domainRegex = /\b([a-zA-Z0-9\-]+\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?)\b/g;
+    const domMatches = allText.match(domainRegex) || [];
+    // Filter to likely domains (not email-like, not short abbreviations)
+    const cleaned = domMatches.filter(d =>
+      d.split('.').every(p => p.length > 1) &&
+      !d.match(/^(pvt|ltd|inc|co|org|com|net)$/i) &&
+      d.length > 5
+    );
+    if (cleaned.length > 0) fields.website = cleaned[0];
+  }
+
+  // ---- 4. PHONE NUMBERS — flexible international format ----
+  /**
+   * Matches:
+   *  +91 8610669831 / +91 86106 69831
+   *  +1-202-555-0147
+   *  (044) 23456789 / (044)-23456789
+   *  Direct: +91 86106 69831
+   *  Landline: 044 – 28441234
+   *  Multiple separated by / or ,
+   */
+  const phonePatterns = [
+    // International with country code: +XX... or +XXX...
+    /(?:\+|00)\d{1,3}[\s\-.]?\(?\d{1,4}\)?[\s\-.]?\d{2,5}[\s\-.]?\d{2,5}[\s\-.]?\d{0,5}/g,
+    // Local with area code in brackets: (0XX) XXXXXXX
+    /\(\d{2,5}\)[\s\-.]?\d{4,10}/g,
+    // Direct/Plain: 7-15 digit numbers possibly split by spaces/dashes
+    /\b\d{3,5}[\s\-]\d{3,5}[\s\-]?\d{0,5}\b/g,
+    // Pure digit runs 8-15 digits
+    /\b\d{8,15}\b/g
+  ];
+
+  // First remove emails and URLs from text to avoid false positives
+  let phoneSearchText = rawText
+    .replace(emailRegex, ' ')
+    .replace(urlRegex, ' ');
+
+  // Strip keyword labels like "Direct:", "Tel:", "Ph:", "Mob:" etc.
+  phoneSearchText = phoneSearchText.replace(/(?:direct|tel|phone|ph|mob|mobile|cell|fax|office|work)\s*[:\-–]?\s*/gi, '');
+
+  const foundPhones = new Set();
+  for (const re of phonePatterns) {
+    const matches = phoneSearchText.match(re) || [];
+    for (const m of matches) {
+      const stripped = m.replace(/\s+/g, ' ').trim();
+      // Validate: must have ≥8 actual digits
+      const digitCount = (stripped.match(/\d/g) || []).length;
+      if (digitCount >= 7 && digitCount <= 18) {
+        // Avoid pincode-only (exactly 6 digits with no other context)
+        if (digitCount === 6 && !stripped.includes('+') && !stripped.includes(' ')) continue;
+        foundPhones.add(stripped);
+      }
+    }
+  }
+  fields.phone = [...foundPhones].slice(0, 3).join(' | ');
+
+  // ---- 5. PINCODE — 6-digit number (India) or 5-digit ZIP ----
+  const pincodeMatch = rawText.match(/\b(\d{6})\b/) || rawText.match(/\b(\d{5})\b/);
+  if (pincodeMatch) fields.pincode = pincodeMatch[1];
+
+  // ---- 6. Filter meaningful lines ----
+  // Exclude lines that are emails, URLs, pure phone numbers, or OCR noise
+  const meaningfulLines = allLines.filter(line => {
+    if (!line || line.length < 2) return false;
+    if (emailRegex.test(line)) return false;           // email line
+    if (/^[^a-zA-Z]*$/.test(line)) return false;       // no letters
+    if (line.replace(/[^a-zA-Z\s]/g, '').trim().length < 2) return false; // mostly symbols
+    if (/^\+?\d[\d\s\-().+]{5,}$/.test(line)) return false; // pure phone line
+    if (/^https?:\/\//i.test(line)) return false;      // URL line
+    if (/^www\./i.test(line)) return false;            // www line
+    // Remove lines that only contain noise chars
+    if (/^[|/\\(){}\[\]<>~*=_^%$#@!`]+$/.test(line)) return false;
+    return true;
+  });
+
+  // ---- 7. COMPANY NAME — detect by keywords ----
+  const companyKeywords = /(?:pvt\.?|ltd\.?|limited|inc\.?|llc|corp\.?|solutions|services|technologies|systems|india|group|enterprises|industries|associates|consultants|digital|global|international|infosys|communications|hardware|software|trading)/i;
+  let companyLineIdx = -1;
+  for (let i = 0; i < meaningfulLines.length; i++) {
+    if (companyKeywords.test(meaningfulLines[i])) {
+      fields.company = meaningfulLines[i]
+        .replace(/^[-–•·:]+\s*/, '')
+        .trim();
+      companyLineIdx = i;
+      break;
+    }
+  }
+
+  // ---- 8. NAME & ROLE — first two non-company meaningful lines ----
+  const nonCompanyLines = meaningfulLines.filter((_, idx) => idx !== companyLineIdx);
+
+  // Name: first line that looks like a person name (letters + space + maybe initials)
+  // Role: second such line OR lines with designation keywords
+  const roleKeywords = /(?:executive|manager|director|officer|engineer|developer|designer|analyst|consultant|president|ceo|cto|coo|cfo|head|lead|senior|junior|associate|administrator|accounts|sales|marketing|hr|finance|operations|technical|assistant|intern|specialist|coordinator|supervisor|founder|co-?founder|partner)/i;
+
+  let nameSet = false;
+  let roleSet = false;
+
+  for (const line of nonCompanyLines) {
+    const clean = line.replace(/^[-–•·:]+\s*/, '').trim();
+    if (!nameSet && !roleKeywords.test(clean) && /^[A-Za-z]/.test(clean)) {
+      fields.name = clean;
+      nameSet = true;
+      continue;
+    }
+    if (!roleSet && (roleKeywords.test(clean) || (nameSet && !roleSet))) {
+      fields.role = clean;
+      roleSet = true;
+      continue;
+    }
+  }
+
+  // ---- 9. ADDRESS — remaining lines after name, role, company ----
+  // Address indicators: road, street, nagar, avenue, lane, city, district,
+  // state, country, floor, block, phase, sector, plot, near, opp
+  const addressKeywords = /(?:road|rd|street|st|nagar|avenue|ave|lane|ln|floor|block|phase|sector|plot|near|opp|opposite|building|bldg|flat|apt|apartment|colony|layout|cross|main|district|city|town|village|post|taluk|mandal|state|province|country|india|chennai|mumbai|delhi|bengaluru|bangalore|hyderabad|coimbatore|kolkata|pune|ahmedabad|jaipur|lucknow|usa|uk|\d{1,4}[,\-\/])/i;
+
+  const usedLines = new Set([fields.name, fields.role, fields.company]);
+  const addressLines = meaningfulLines.filter(line => {
+    const clean = line.replace(/^[-–•·:]+\s*/, '').trim();
+    if (usedLines.has(clean)) return false;
+    if (emailRegex.test(clean)) return false;
+    if (/^www\./i.test(clean)) return false;
+    if (/^https?:\/\//i.test(clean)) return false;
+    if (addressKeywords.test(clean)) return true;
+    // If it has digits and letters (like door number) include it
+    if (/\d/.test(clean) && /[a-zA-Z]/.test(clean) && clean.length > 4) return true;
+    // If it's a plain city/state-like word include cautiously
+    if (/^[A-Z][a-z]+(?:\s[A-Z][a-z]+)*$/.test(clean) && clean.length > 4) return true;
+    return false;
+  });
+  fields.address = addressLines
+    .map(l => l.replace(/^[-–•·:]+\s*/, '').trim())
+    .join(', ')
+    .replace(/,\s*,/g, ',') // remove duplicate commas
+    .trim();
+
+  // ---- 10. Clean up company if it has pincode merged in ----
+  if (fields.company && fields.pincode) {
+    fields.company = fields.company
+      .replace(new RegExp('[-–]\\s*' + fields.pincode), '')
+      .replace(fields.pincode, '')
+      .trim();
+  }
+
+  return fields;
+}
+
+/* =======================================================
+   FILL FORM FIELDS
+   ======================================================= */
+function fillFields(parsed, confidence) {
+  const fields = [
+    { id: 'f-name',    val: parsed.name,    confId: 'conf-name'    },
+    { id: 'f-role',    val: parsed.role,    confId: 'conf-role'    },
+    { id: 'f-company', val: parsed.company, confId: 'conf-company' },
+    { id: 'f-phone',   val: parsed.phone,   confId: 'conf-phone'   },
+    { id: 'f-email',   val: parsed.email,   confId: 'conf-email'   },
+    { id: 'f-web',     val: parsed.website, confId: 'conf-web'     },
+    { id: 'f-pin',     val: parsed.pincode, confId: 'conf-pin'     },
+    { id: 'f-addr',    val: parsed.address, confId: 'conf-addr'    },
+  ];
+
+  fields.forEach(({ id, val, confId }) => {
+    const el = document.getElementById(id);
+    el.value = val || '';
+    if (val) {
+      el.classList.add('filled');
+      // Set confidence badge
+      const badge = document.getElementById(confId);
+      const c = confidence;
+      badge.textContent = c >= 80 ? 'High' : c >= 55 ? 'Med' : 'Low';
+      badge.className = 'confidence-badge ' + (c >= 80 ? 'conf-high' : c >= 55 ? 'conf-med' : 'conf-low');
+    } else {
+      el.classList.remove('filled');
+    }
+  });
+}
+
+function clearFields() {
+  ['f-name','f-role','f-company','f-phone','f-email','f-web','f-pin','f-addr'].forEach(id => {
+    const el = document.getElementById(id);
+    el.value = '';
+    el.classList.remove('filled');
+  });
+  ['conf-name','conf-role','conf-company','conf-phone','conf-email','conf-web','conf-pin','conf-addr'].forEach(id => {
+    document.getElementById(id).textContent = '';
+    document.getElementById(id).className = 'confidence-badge';
+  });
+  document.getElementById('rawText').textContent = '—';
+  document.getElementById('rawText').style.display = 'none';
+  document.getElementById('ocrStats').style.display = 'none';
+  capturedDataURL = null;
+  document.getElementById('previewWrapper').style.display = 'none';
+  document.getElementById('btnProcess').style.display = 'none';
+  showToast('🗑️ Fields cleared', 'info');
+}
+
+function toggleRaw() {
+  const box = document.getElementById('rawText');
+  const btn = document.getElementById('btnToggleRaw');
+  if (box.style.display === 'none' || !box.style.display) {
+    box.style.display = 'block';
+    btn.textContent = 'Hide';
+  } else {
+    box.style.display = 'none';
+    btn.textContent = 'Show';
+  }
+}
+
+/* =======================================================
+   SAVE CONTACT TO LOCALSTORAGE
+   ======================================================= */
+function saveContact() {
+  const name    = document.getElementById('f-name').value.trim();
+  const role    = document.getElementById('f-role').value.trim();
+  const company = document.getElementById('f-company').value.trim();
+  const phone   = document.getElementById('f-phone').value.trim();
+  const email   = document.getElementById('f-email').value.trim();
+  const website = document.getElementById('f-web').value.trim();
+  const pincode = document.getElementById('f-pin').value.trim();
+  const address = document.getElementById('f-addr').value.trim();
+
+  if (!name && !company) {
+    showToast('⚠️ Please enter at least a Name or Company', 'error');
+    return;
+  }
+
+  const card = {
+    id:       Date.now(),
+    scannedAt: new Date().toLocaleString(),
+    name, role, company, phone, email, website, pincode, address,
+    image: capturedDataURL || null
+  };
+
+  cards.unshift(card);
+  saveHistory();
+  showToast('💾 Contact saved to history!', 'success');
+
+  // Switch to history
+  setTimeout(() => { switchTab('history'); }, 800);
+}
+
+/* =======================================================
+   SHARE / EXPORT VCARD
+   ======================================================= */
+function shareContact() {
+  const name    = document.getElementById('f-name').value.trim();
+  const role    = document.getElementById('f-role').value.trim();
+  const company = document.getElementById('f-company').value.trim();
+  const phone   = document.getElementById('f-phone').value.trim();
+  const email   = document.getElementById('f-email').value.trim();
+  const website = document.getElementById('f-web').value.trim();
+  const address = document.getElementById('f-addr').value.trim();
+
+  // Build vCard string
+  const vcard = [
+    'BEGIN:VCARD',
+    'VERSION:3.0',
+    `FN:${name}`,
+    `ORG:${company}`,
+    `TITLE:${role}`,
+    phone  ? `TEL:${phone.split('|')[0].trim()}` : '',
+    email  ? `EMAIL:${email}` : '',
+    website? `URL:${website}` : '',
+    address? `ADR:;;${address};;;;` : '',
+    `NOTE:Scanned by AI Card Scanner`,
+    'END:VCARD'
+  ].filter(Boolean).join('\n');
+
+  // Download vCard
+  const blob = new Blob([vcard], { type: 'text/vcard' });
+  const url  = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (name || 'contact').replace(/\s+/g, '_') + '.vcf';
+  a.click();
+  URL.revokeObjectURL(url);
+
+  showToast('📇 vCard downloaded!', 'success');
+}
+
+/* =======================================================
+   HISTORY: LOAD / SAVE / RENDER
+   ======================================================= */
+function loadHistory() {
+  try {
+    cards = JSON.parse(localStorage.getItem('ai_card_scanner_v2') || '[]');
+  } catch { cards = []; }
+}
+
+function saveHistory() {
+  try {
+    localStorage.setItem('ai_card_scanner_v2', JSON.stringify(cards));
+  } catch (e) {
+    // If storage is full, remove images from old cards
+    cards = cards.map((c, i) => i > 20 ? { ...c, image: null } : c);
+    localStorage.setItem('ai_card_scanner_v2', JSON.stringify(cards));
+  }
+}
+
+function renderHistory(filter = '') {
+  const list = document.getElementById('historyList');
+  const filtered = filter
+    ? cards.filter(c =>
+        [c.name,c.company,c.email,c.phone,c.role].join(' ').toLowerCase().includes(filter.toLowerCase())
+      )
+    : cards;
+
+  document.getElementById('historyCount').textContent = filtered.length + ' card' + (filtered.length !== 1 ? 's' : '');
+
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="empty-state"><div class="es-icon">${filter ? '🔍' : '🃏'}</div>
+      <p>${filter ? 'No cards match your search.' : 'No scanned cards yet.<br>Scan your first card!'}</p></div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map((card, idx) => {
+    const realIdx = cards.indexOf(card);
+    const initials = (card.name || card.company || '?')
+      .split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
+    const colors = ['#4f46e5','#7c3aed','#db2777','#0891b2','#059669','#d97706','#dc2626'];
+    const bg = colors[realIdx % colors.length];
+
+    return `
+      <div class="history-item fade-in" onclick="openModal(${realIdx})">
+        <div class="hi-header">
+          <div class="hi-avatar" style="background:${bg}">${initials}</div>
+          <div class="hi-info">
+            <div class="hi-name">${esc(card.name || '—')}</div>
+            <div class="hi-company">${esc(card.company || card.role || '—')}</div>
+          </div>
+          <div class="hi-actions" onclick="event.stopPropagation()">
+            <button class="btn btn-ghost btn-icon btn-sm" onclick="loadCardToForm(${realIdx})" title="Load to form">✏️</button>
+            <button class="btn btn-danger btn-icon btn-sm" onclick="deleteCard(${realIdx})" title="Delete">🗑️</button>
+          </div>
+        </div>
+        <div class="hi-meta">
+          ${card.phone  ? `<span class="hi-chip">📞 ${esc(card.phone.split('|')[0].trim())}</span>` : ''}
+          ${card.email  ? `<span class="hi-chip">✉️ ${esc(card.email)}</span>` : ''}
+          ${card.website? `<span class="hi-chip">🌐 ${esc(card.website)}</span>` : ''}
+        </div>
+        <div class="hi-date">🕐 ${esc(card.scannedAt)}</div>
+      </div>`;
+  }).join('');
+}
+
+function filterHistory() {
+  renderHistory(document.getElementById('searchInput').value);
+}
+
+function clearAllHistory() {
+  if (!confirm('Delete all scanned cards?')) return;
+  cards = [];
+  saveHistory();
+  renderHistory();
+  showToast('🗑️ All history cleared', 'info');
+}
+
+/* =======================================================
+   MODAL
+   ======================================================= */
+let activeModalIdx = null;
+
+function openModal(idx) {
+  activeModalIdx = idx;
+  const c = cards[idx];
+  if (!c) return;
+
+  document.getElementById('modalTitle').textContent = c.name || c.company || 'Card Details';
+
+  const rows = [
+    ['👤 Name',       c.name],
+    ['💼 Role',       c.role],
+    ['🏢 Company',    c.company],
+    ['📞 Phone',      c.phone],
+    ['✉️ Email',      c.email],
+    ['🌐 Website',    c.website],
+    ['📮 Pincode',    c.pincode],
+    ['📍 Address',    c.address],
+    ['🕐 Scanned At', c.scannedAt],
+  ].filter(([,v]) => v);
+
+  document.getElementById('modalBody').innerHTML = rows.map(([label, val]) =>
+    `<div class="modal-field">
+       <label>${label}</label>
+       <div class="val">${esc(val)}</div>
+     </div>`
+  ).join('') + (c.image
+    ? `<img src="${c.image}" style="width:100%;border-radius:8px;margin-top:12px;max-height:180px;object-fit:contain;">`
+    : '');
+
+  document.getElementById('detailModal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('detailModal').classList.remove('open');
+  activeModalIdx = null;
+}
+
+function loadToForm() {
+  if (activeModalIdx === null) return;
+  loadCardToForm(activeModalIdx);
+  closeModal();
+  switchTab('result');
+}
+
+function loadCardToForm(idx) {
+  const c = cards[idx];
+  if (!c) return;
+  document.getElementById('f-name').value    = c.name    || '';
+  document.getElementById('f-role').value    = c.role    || '';
+  document.getElementById('f-company').value = c.company || '';
+  document.getElementById('f-phone').value   = c.phone   || '';
+  document.getElementById('f-email').value   = c.email   || '';
+  document.getElementById('f-web').value     = c.website || '';
+  document.getElementById('f-pin').value     = c.pincode || '';
+  document.getElementById('f-addr').value    = c.address || '';
+  if (c.image) {
+    capturedDataURL = c.image;
+    showPreview(c.image, '📋 LOADED');
+  }
+  switchTab('result');
+  showToast('✏️ Card loaded for editing', 'info');
+}
+
+function deleteCard(idx) {
+  const i = idx !== undefined ? idx : activeModalIdx;
+  if (i === null || i === undefined) return;
+  if (!confirm('Delete this card?')) return;
+  cards.splice(i, 1);
+  saveHistory();
+  closeModal();
+  renderHistory(document.getElementById('searchInput').value);
+  showToast('🗑️ Card deleted', 'info');
+}
+
+function exportVCard() {
+  if (activeModalIdx === null) return;
+  const c = cards[activeModalIdx];
+  const vcard = [
+    'BEGIN:VCARD', 'VERSION:3.0',
+    `FN:${c.name || ''}`,
+    `ORG:${c.company || ''}`,
+    `TITLE:${c.role || ''}`,
+    c.phone   ? `TEL:${c.phone.split('|')[0].trim()}` : '',
+    c.email   ? `EMAIL:${c.email}` : '',
+    c.website ? `URL:${c.website}` : '',
+    c.address ? `ADR:;;${c.address};;;;` : '',
+    'END:VCARD'
+  ].filter(Boolean).join('\n');
+
+  const blob = new Blob([vcard], { type: 'text/vcard' });
+  const url  = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (c.name || 'contact').replace(/\s+/g, '_') + '.vcf';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('📇 vCard exported!', 'success');
+}
+
+/* =======================================================
+   EXPORT ALL AS CSV
+   ======================================================= */
+function exportAllCSV() {
+  if (cards.length === 0) { showToast('No cards to export', 'error'); return; }
+
+  const headers = ['Name','Role','Company','Phone','Email','Website','Pincode','Address','Scanned At'];
+  const rows = cards.map(c => [
+    c.name, c.role, c.company, c.phone, c.email, c.website, c.pincode, c.address, c.scannedAt
+  ].map(v => `"${(v||'').replace(/"/g,'""')}"`));
+
+  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'scanned_cards_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast(`⬇️ Exported ${cards.length} cards as CSV`, 'success');
+}
+
+/* =======================================================
+   TOAST NOTIFICATION
+   ======================================================= */
+let toastTimer = null;
+function showToast(msg, type = 'info') {
+  const toast = document.getElementById('toast');
+  const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+  toast.innerHTML = `<span>${icons[type] || 'ℹ️'}</span><span>${msg}</span>`;
+  toast.className = `show toast-${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.className = ''; }, 3000);
+}
+
+/* =======================================================
+   ESCAPE HTML
+   ======================================================= */
+function esc(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+/* =======================================================
+   CLOSE MODAL ON OVERLAY CLICK
+   ======================================================= */
+document.getElementById('detailModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+</script>
+</body>
+</html>
