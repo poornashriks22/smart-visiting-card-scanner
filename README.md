@@ -52,11 +52,6 @@ This application uses OCR (Optical Character Recognition) to scan business/visit
 smart-visiting-card-scanner/
 │
 ├── index.html
-├── style.css
-├── script.js
-└── README.md
-```
-
 ---
 
 ## ⚡ Installation
@@ -73,10 +68,10 @@ Open `index.html` in your browser.
 
 - AI-based text correction
 - QR code support
-- Export to Excel/PDF
 - Cloud database integration
 - Multi-language OCR
 - Contact auto-save
+
 ## 📄 License
 
 This project is open-source and free to use.
